@@ -1,0 +1,10 @@
+services:
+  api:
+    build: .
+    image: ai-demo-api:latest
+    container_name: ai-demo-api
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENVIRONMENT: production
+    restart: unless-stopped
