@@ -1,15 +1,7 @@
 import httpx
 
 from app.core.config import Settings, get_settings
-
-
-class DeepSeekError(Exception):
-    """Raised when a DeepSeek API call fails."""
-
-    def __init__(self, message: str, status_code: int = 502) -> None:
-        super().__init__(message)
-        self.status_code = status_code
-
+from app.core.exceptions import DeepSeekError
 
 class DeepSeekService:
     """Client for the DeepSeek chat completions API."""
