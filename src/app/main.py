@@ -17,9 +17,38 @@ def create_app() -> FastAPI:
     )
 
     app = FastAPI(
-        title=settings.app_name,
-        version=settings.app_version,
-        description="Production-grade FastAPI demo API.",
+       title=settings.app_name,
+       version=settings.app_version,
+       description="""
+    # AI Demo API
+
+    Production-grade AI API powered by FastAPI and DeepSeek.
+
+    ## Features
+
+    - Chat completion API
+    - Async DeepSeek integration
+    - Docker deployment
+    - Automated testing
+
+    ## Environment
+
+    - Python 3.12
+    - FastAPI
+    - Docker
+    """,
+       docs_url="/docs",
+       redoc_url="/redoc",
+       openapi_tags=[
+           {
+               "name": "health",
+               "description": "Service health check endpoints",
+           },
+           {
+               "name": "chat",
+               "description": "AI conversation endpoints",
+           },
+       ],
     )
 
 
