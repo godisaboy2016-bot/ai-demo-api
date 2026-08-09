@@ -3,6 +3,7 @@ import httpx
 from app.core.config import Settings, get_settings
 from app.core.exceptions import DeepSeekError
 
+
 class DeepSeekService:
     """Client for the DeepSeek chat completions API."""
 
