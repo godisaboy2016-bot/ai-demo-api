@@ -83,8 +83,19 @@ def test_middleware_logs_request_started_and_finished(
     assert len(started) == 1
     assert len(finished) == 1
     assert f"request_id={response.headers['X-Request-ID']}" in started[0]
+    assert "method=GET" in started[0]
+    assert "path=/echo" in started[0]
     assert f"request_id={response.headers['X-Request-ID']}" in finished[0]
     assert f"status_code={response.status_code}" in finished[0]
+
+
+def test_middleware_generates_unique_request_ids(logging_client: TestClient) -> None:
+    first = logging_client.get("/echo")
+    second = logging_client.get("/echo")
+
+    assert first.headers["X-Request-ID"]
+    assert second.headers["X-Request-ID"]
+    assert first.headers["X-Request-ID"] != second.headers["X-Request-ID"]
 
 
 def test_middleware_logs_request_finished_on_unhandled_exception(
@@ -208,10 +219,53 @@ def test_app_exception_handler_omits_request_id_without_request_id() -> None:
     }
 
 
+def test_app_exception_handler_defaults_to_500() -> None:
+    response = asyncio.run(app_exception_handler(_http_request("rid-3"), AppException("boom")))
+
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"] == "rid-3"
+    assert json.loads(response.body) == {
+        "error": "internal_error",
+        "message": "boom",
+        "request_id": "rid-3",
+    }
+
+
+@pytest.mark.parametrize(
+    ("status_code", "message"),
+    [
+        (503, "api key missing"),
+        (504, "upstream timeout"),
+    ],
+)
+def test_deepseek_error_custom_status_codes(status_code: int, message: str) -> None:
+    response = asyncio.run(
+        app_exception_handler(
+            _http_request("rid-4"),
+            DeepSeekError(message, status_code=status_code),
+        )
+    )
+
+    assert response.status_code == status_code
+    assert response.headers["X-Request-ID"] == "rid-4"
+    assert json.loads(response.body) == {
+        "error": "deepseek_error",
+        "message": message,
+        "request_id": "rid-4",
+    }
+
+
 def test_real_app_health_response_has_request_id(client: TestClient) -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
+    assert response.headers["X-Request-ID"]
+
+
+def test_real_app_validation_error_keeps_request_id_header(client: TestClient) -> None:
+    response = client.post("/api/chat", json={})
+
+    assert response.status_code == 422
     assert response.headers["X-Request-ID"]
 
 
