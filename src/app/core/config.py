@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Self
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +56,16 @@ class Settings(BaseSettings):
             "ACCESS_TOKEN_EXPIRE_MINUTES", "APP_ACCESS_TOKEN_EXPIRE_MINUTES"
         ),
     )
+
+    @model_validator(mode="after")
+    def _validate_jwt_secret(self: Self) -> Self:
+        """Fail fast on a missing or weak JWT secret."""
+
+        if not self.jwt_secret_key:
+            raise ValueError("JWT_SECRET_KEY must be configured")
+        if self.environment == "production" and len(self.jwt_secret_key) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters long")
+        return self
 
 
 @lru_cache

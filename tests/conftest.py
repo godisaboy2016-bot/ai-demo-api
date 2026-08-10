@@ -1,10 +1,14 @@
 import asyncio
+import os
 from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+
+# App settings require a JWT secret; set a test value before importing the app.
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-test-secret-key-32")
 
 from app.core.config import get_settings
 from app.db.base import Base

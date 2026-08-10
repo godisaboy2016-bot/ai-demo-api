@@ -2,8 +2,9 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
+from pydantic import ValidationError
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -81,3 +82,27 @@ def test_decode_access_token_rejects_tampered(jwt_settings) -> None:
 
     with pytest.raises(jwt.InvalidSignatureError):
         decode_access_token(tampered)
+
+
+def test_settings_require_jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    get_settings.cache_clear()
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.delenv("APP_JWT_SECRET_KEY", raising=False)
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+    get_settings.cache_clear()
+
+
+def test_settings_reject_short_secret_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get_settings.cache_clear()
+    monkeypatch.setenv("JWT_SECRET_KEY", "short-secret")
+    monkeypatch.setenv("APP_ENVIRONMENT", "production")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+    get_settings.cache_clear()

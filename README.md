@@ -39,11 +39,22 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
+# 启动数据库（PostgreSQL，仅暴露到本机 127.0.0.1:5432）
+docker compose up -d db
+
+# 本地连接数据库（与 docker-compose.yml 默认一致）
+export DATABASE_URL="postgresql+asyncpg://ai_demo:ai_demo@127.0.0.1:5432/ai_demo"
+
+# 执行数据库迁移（首次运行或模型变更后）
+alembic -c src/app/db/alembic.ini upgrade head
+
 # 启动开发服务器（支持热重载）
 uvicorn app.main:app --reload
 ```
 
 访问 `http://127.0.0.1:8000/health` 查看健康状态，`http://127.0.0.1:8000/docs` 查看交互式 API 文档。
+
+注意：注册、登录等接口依赖 `users` 表，启动前必须先执行数据库迁移；`JWT_SECRET_KEY` 需在 `.env` 中配置（见下文“配置”）。
 
 ## DeepSeek Chat API
 
@@ -77,12 +88,45 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 pytest
 ```
 
+## 数据库迁移
+
+数据库结构变更通过 Alembic 管理，迁移脚本位于 `src/app/db/migrations/`。迁移会等待 `db` 服务健康后再执行：
+
+```bash
+docker compose run --rm migrate
+```
+
+`migrate` 复用 `ai-demo-api` 镜像，等价于在容器内执行 `alembic upgrade head`，需要与 `api` 服务相同的环境变量（至少 `DATABASE_URL` 与 `JWT_SECRET_KEY`）。本地开发也可以直接执行：
+
+```bash
+alembic -c src/app/db/alembic.ini upgrade head
+```
+
+创建数据库并迁移后的验证方法：
+
+```bash
+# 查看已应用的迁移版本
+docker compose exec db psql -U ai_demo -d ai_demo -c "SELECT * FROM alembic_version;"
+
+# 查看业务表
+docker compose exec db psql -U ai_demo -d ai_demo -c "\dt"
+```
+
+或调用注册接口验证 `users` 表可用（期望返回 `201`）：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "demo@example.com", "password": "password123"}'
+```
+
 ## Docker 部署
 
 构建并启动：
 
 ```bash
 docker compose up -d --build
+docker compose run --rm migrate
 ```
 
 或仅构建镜像：
@@ -108,5 +152,6 @@ docker run -p 8000:8000 ai-demo-api
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 基础地址 |
 | `DEEPSEEK_MODEL` | `deepseek-chat` | 默认模型名 |
 | `DEEPSEEK_TIMEOUT_SECONDS` | `60.0` | DeepSeek 请求超时（秒） |
+| `JWT_SECRET_KEY` | 无 | JWT 签名密钥（必填；生产环境至少 32 字符，缺失或过短时服务拒绝启动）。生成示例：`openssl rand -hex 32` |
 
 可参考 `.env.example` 创建本地 `.env` 文件。

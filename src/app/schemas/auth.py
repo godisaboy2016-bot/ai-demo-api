@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -11,8 +11,18 @@ class RegisterRequest(BaseModel):
     password: str = Field(
         ...,
         min_length=8,
-        description="Password, at least 8 characters",
+        max_length=72,
+        description="Password, 8 to 72 characters",
     )
+
+    @field_validator("password")
+    @classmethod
+    def _password_within_bcrypt_limit(cls, value: str) -> str:
+        """Reject passwords longer than bcrypt's 72-byte input limit."""
+
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
 
 
 class LoginRequest(BaseModel):

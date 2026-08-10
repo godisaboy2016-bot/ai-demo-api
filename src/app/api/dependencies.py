@@ -38,6 +38,9 @@ async def get_current_user(
     except jwt.InvalidTokenError:
         raise _invalid_token() from None
 
+    if payload.get("type") != "access":
+        raise _invalid_token()
+
     subject = payload.get("sub")
     if subject is None:
         raise _invalid_token()

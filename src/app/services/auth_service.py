@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AuthError, ConflictError
@@ -30,7 +31,11 @@ async def register_user(
         hashed_password=hash_password(password),
     )
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ConflictError("User with this email already exists.") from exc
     await session.refresh(user)
     return user
 

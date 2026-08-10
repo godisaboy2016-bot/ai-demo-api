@@ -51,6 +51,23 @@ async def test_register_duplicate_email_raises_conflict(db_session) -> None:
     assert exc_info.value.error_code == "user_already_exists"
 
 
+async def test_register_race_duplicate_email_raises_conflict(
+    db_session, monkeypatch
+) -> None:
+    await register_user(db_session, "alice@example.com", "password123")
+
+    async def scalar_none(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(db_session, "scalar", scalar_none)
+
+    with pytest.raises(ConflictError) as exc_info:
+        await register_user(db_session, "alice@example.com", "password456")
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.error_code == "user_already_exists"
+
+
 async def test_register_normalizes_email_lowercase(db_session) -> None:
     user = await register_user(db_session, "  Alice@Example.COM  ", "password123")
 

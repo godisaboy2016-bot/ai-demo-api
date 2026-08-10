@@ -35,6 +35,33 @@ def test_register_short_password_returns_422(auth_client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_register_password_too_long_returns_422(auth_client: TestClient) -> None:
+    response = auth_client.post(
+        "/api/auth/register",
+        json={"email": "alice@example.com", "password": "x" * 73},
+    )
+
+    assert response.status_code == 422
+
+
+def test_register_password_over_72_bytes_returns_422(auth_client: TestClient) -> None:
+    response = auth_client.post(
+        "/api/auth/register",
+        json={"email": "alice@example.com", "password": "密" * 30},
+    )
+
+    assert response.status_code == 422
+
+
+def test_register_password_at_72_bytes_succeeds(auth_client: TestClient) -> None:
+    response = auth_client.post(
+        "/api/auth/register",
+        json={"email": "alice@example.com", "password": "x" * 72},
+    )
+
+    assert response.status_code == 201
+
+
 def test_login_success_returns_token(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/auth/register",

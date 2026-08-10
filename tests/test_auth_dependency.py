@@ -1,7 +1,10 @@
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import jwt
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.core.security import create_access_token
 
 
@@ -55,6 +58,30 @@ def test_me_with_invalid_token_returns_401(auth_client: TestClient) -> None:
 
 def test_me_with_token_for_unknown_user_returns_401(auth_client: TestClient) -> None:
     token = create_access_token(uuid4())
+
+    response = auth_client.get(
+        "/api/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"] == "invalid_token"
+
+
+def test_me_with_non_access_token_returns_401(auth_client: TestClient) -> None:
+    settings = get_settings()
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(uuid4()),
+        "iat": now,
+        "exp": now + timedelta(minutes=30),
+        "type": "refresh",
+    }
+    token = jwt.encode(
+        payload,
+        settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+    )
 
     response = auth_client.get(
         "/api/auth/me",

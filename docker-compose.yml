@@ -2,6 +2,8 @@ services:
   db:
     image: postgres:16-alpine
     container_name: ai-demo-db
+    ports:
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-ai_demo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai_demo}
@@ -16,6 +18,19 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  migrate:
+    build: .
+    image: ai-demo-api:latest
+    working_dir: /usr/local/lib/python3.12/site-packages/app/db
+    environment:
+      APP_ENVIRONMENT: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://ai_demo:ai_demo@db:5432/ai_demo}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+
   api:
     build: .
     image: ai-demo-api:latest
@@ -26,6 +41,7 @@ services:
       APP_ENVIRONMENT: production
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://ai_demo:ai_demo@db:5432/ai_demo}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
     depends_on:
       db:
         condition: service_healthy
