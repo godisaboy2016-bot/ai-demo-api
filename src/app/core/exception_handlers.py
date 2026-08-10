@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import AppException
@@ -37,6 +38,33 @@ async def app_exception_handler(
 
     response = JSONResponse(
         status_code=exc.status_code,
+        content=content,
+    )
+    if request_id:
+        response.headers["X-Request-ID"] = request_id
+
+    return response
+
+
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    """
+    Handle request validation errors with the unified 422 contract.
+    """
+
+    request_id = getattr(request.state, "request_id", None)
+
+    content = {
+        "error": "validation_error",
+        "message": "Invalid request",
+    }
+    if request_id:
+        content["request_id"] = request_id
+
+    response = JSONResponse(
+        status_code=422,
         content=content,
     )
     if request_id:
