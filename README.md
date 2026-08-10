@@ -96,7 +96,7 @@ pytest
 docker compose run --rm migrate
 ```
 
-`migrate` 复用 `ai-demo-api` 镜像，等价于在容器内执行 `alembic upgrade head`，需要与 `api` 服务相同的环境变量（至少 `DATABASE_URL` 与 `JWT_SECRET_KEY`）。本地开发也可以直接执行：
+`migrate` 复用 `ai-demo-api` 镜像，等价于在容器内执行 `alembic upgrade head`，环境变量与 `api` 服务保持一致（至少需要 `DATABASE_URL`；`JWT_SECRET_KEY` 若已配置则继承使用，未配置时 migrate 会自动生成一次性临时值仅用于通过配置校验，迁移本身不使用 JWT）。本地开发也可以直接执行：
 
 ```bash
 alembic -c src/app/db/alembic.ini upgrade head
@@ -125,6 +125,9 @@ curl -s -X POST http://127.0.0.1:8000/api/auth/register \
 构建并启动：
 
 ```bash
+# 先设置 JWT_SECRET_KEY（api 必填，与 migrate 使用同一来源；缺失时 compose 会直接报错）
+export JWT_SECRET_KEY="$(openssl rand -hex 32)"
+
 docker compose up -d --build
 docker compose run --rm migrate
 ```
@@ -137,6 +140,8 @@ docker run -p 8000:8000 ai-demo-api
 ```
 
 容器内置 `HEALTHCHECK`，会每 30 秒请求一次 `/health` 检查服务状态。
+
+`JWT_SECRET_KEY` 可通过 `.env` 文件或环境变量提供；`migrate` 在未配置时会自动生成一次性临时值用于通过配置校验（迁移不使用 JWT），`api` 则必须显式配置。
 
 ## 配置
 

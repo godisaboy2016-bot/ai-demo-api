@@ -3,6 +3,7 @@ import logging
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.exceptions import AppException
 
@@ -66,6 +67,44 @@ async def validation_exception_handler(
     response = JSONResponse(
         status_code=422,
         content=content,
+    )
+    if request_id:
+        response.headers["X-Request-ID"] = request_id
+
+    return response
+
+
+def _http_error_code(status_code: int) -> str:
+    """Map common HTTP exception status codes to error codes."""
+
+    if status_code == 404:
+        return "not_found"
+    if status_code == 405:
+        return "method_not_allowed"
+    return "http_error"
+
+
+async def http_exception_handler(
+    request: Request,
+    exc: StarletteHTTPException,
+) -> JSONResponse:
+    """
+    Handle default HTTP exceptions (404, 405, ...) with the unified error contract.
+    """
+
+    request_id = getattr(request.state, "request_id", None)
+
+    content = {
+        "error": _http_error_code(exc.status_code),
+        "message": exc.detail if isinstance(exc.detail, str) else "HTTP error",
+    }
+    if request_id:
+        content["request_id"] = request_id
+
+    response = JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers=exc.headers,
     )
     if request_id:
         response.headers["X-Request-ID"] = request_id

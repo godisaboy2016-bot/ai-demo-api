@@ -90,7 +90,7 @@ def test_settings_require_jwt_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("APP_JWT_SECRET_KEY", raising=False)
 
     with pytest.raises(ValidationError):
-        Settings()
+        Settings(_env_file=None)
 
     get_settings.cache_clear()
 

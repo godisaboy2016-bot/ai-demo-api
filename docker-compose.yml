@@ -29,7 +29,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    # 迁移只依赖 DATABASE_URL；JWT_SECRET_KEY 继承 api 配置（若有）。
+    # 未配置时生成一次性临时值，仅用于通过 Settings 校验，迁移过程不使用 JWT。
+    command:
+      - sh
+      - -c
+      - export JWT_SECRET_KEY="${JWT_SECRET_KEY:-$(python -c 'import secrets; print(secrets.token_hex(32))')}"; exec alembic -c alembic.ini upgrade head
 
   api:
     build: .
@@ -41,7 +46,9 @@ services:
       APP_ENVIRONMENT: production
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://ai_demo:ai_demo@db:5432/ai_demo}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      # api 必须配置 JWT_SECRET_KEY（与 migrate 同一来源：shell 环境或 .env）。
+      # 未配置时 compose 直接报错，避免容器启动后崩溃。
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required (set it in .env or export it)}
     depends_on:
       db:
         condition: service_healthy

@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 # App settings require a JWT secret; set a test value before importing the app.
@@ -51,7 +51,9 @@ def override_chat_service() -> Iterator[Callable[[object], None]]:
 
 
 @pytest.fixture
-def db_session_override(monkeypatch: pytest.MonkeyPatch) -> None:
+def db_session_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[async_sessionmaker[AsyncSession]]:
     get_settings.cache_clear()
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-test-secret-key-32")
 
@@ -74,7 +76,7 @@ def db_session_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
     app.dependency_overrides[get_db] = override_get_db
 
-    yield
+    yield factory
 
     app.dependency_overrides.clear()
     get_settings.cache_clear()
