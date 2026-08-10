@@ -1,4 +1,21 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: ai-demo-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ai_demo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai_demo}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_demo}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai_demo} -d ${POSTGRES_DB:-ai_demo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
   api:
     build: .
     image: ai-demo-api:latest
@@ -8,4 +25,11 @@ services:
     environment:
       APP_ENVIRONMENT: production
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://ai_demo:ai_demo@db:5432/ai_demo}
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_data:

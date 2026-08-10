@@ -37,6 +37,24 @@ class Settings(BaseSettings):
             "DEEPSEEK_TIMEOUT_SECONDS", "APP_DEEPSEEK_TIMEOUT_SECONDS"
         ),
     )
+    database_url: str = Field(
+        default="postgresql+asyncpg://ai_demo:ai_demo@db:5432/ai_demo",
+        validation_alias=AliasChoices("DATABASE_URL", "APP_DATABASE_URL"),
+    )
+    jwt_secret_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("JWT_SECRET_KEY", "APP_JWT_SECRET_KEY"),
+    )
+    jwt_algorithm: str = Field(
+        default="HS256",
+        validation_alias=AliasChoices("JWT_ALGORITHM", "APP_JWT_ALGORITHM"),
+    )
+    access_token_expire_minutes: int = Field(
+        default=30,
+        validation_alias=AliasChoices(
+            "ACCESS_TOKEN_EXPIRE_MINUTES", "APP_ACCESS_TOKEN_EXPIRE_MINUTES"
+        ),
+    )
 
 
 @lru_cache
