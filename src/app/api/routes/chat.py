@@ -2,6 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
+from app.api.dependencies import get_current_user
+from app.models.user import User
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.deepseek import (
     DeepSeekService,
@@ -10,6 +12,7 @@ from app.services.deepseek import (
 
 router = APIRouter(tags=["chat"])
 
+CurrentUser = Annotated[User, Depends(get_current_user)]
 
 ServiceDep = Annotated[
     DeepSeekService,
@@ -25,9 +28,10 @@ ServiceDep = Annotated[
 async def chat(
     payload: ChatRequest,
     service: ServiceDep,
+    current_user: CurrentUser,
 ) -> ChatResponse:
     """
-    Send a user message to the DeepSeek API and return the AI reply.
+    Send an authenticated user's message to the DeepSeek API and return the AI reply.
     """
 
     reply = await service.chat(

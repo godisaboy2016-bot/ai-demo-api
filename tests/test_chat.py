@@ -56,49 +56,84 @@ def test_settings_read_deepseek_env_vars(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_chat_returns_ai_reply(
-    client: TestClient, override_chat_service, fake_chat_service
+    auth_client: TestClient,
+    auth_headers,
+    override_chat_service,
+    fake_chat_service,
 ) -> None:
     override_chat_service(fake_chat_service)
-    response = client.post("/api/chat", json={"message": "你好"})
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好"},
+        headers=auth_headers(auth_client),
+    )
 
     assert response.status_code == 200
     assert response.json() == {"reply": "AI 回复"}
 
 
-def test_chat_missing_message_returns_422(client: TestClient) -> None:
-    response = client.post("/api/chat", json={})
+def test_chat_missing_message_returns_422(
+    auth_client: TestClient, auth_headers
+) -> None:
+    response = auth_client.post("/api/chat", json={}, headers=auth_headers(auth_client))
 
     assert response.status_code == 422
 
 
-def test_chat_empty_message_returns_422(client: TestClient) -> None:
-    response = client.post("/api/chat", json={"message": ""})
+def test_chat_empty_message_returns_422(
+    auth_client: TestClient, auth_headers
+) -> None:
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": ""},
+        headers=auth_headers(auth_client),
+    )
 
     assert response.status_code == 422
 
 
 def test_chat_content_type_is_json(
-    client: TestClient, override_chat_service, fake_chat_service
+    auth_client: TestClient,
+    auth_headers,
+    override_chat_service,
+    fake_chat_service,
 ) -> None:
     override_chat_service(fake_chat_service)
-    response = client.post("/api/chat", json={"message": "你好"})
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好"},
+        headers=auth_headers(auth_client),
+    )
 
     assert response.headers["content-type"].startswith("application/json")
 
 
 def test_chat_service_error_maps_to_502(
-    client: TestClient, override_chat_service, fake_chat_service
+    auth_client: TestClient,
+    auth_headers,
+    override_chat_service,
+    fake_chat_service,
 ) -> None:
     fake_chat_service.error = DeepSeekError("upstream failure")
     override_chat_service(fake_chat_service)
-    response = client.post("/api/chat", json={"message": "你好"})
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好"},
+        headers=auth_headers(auth_client),
+    )
 
     assert response.status_code == 502
 
 
-def test_chat_missing_api_key_returns_503(client: TestClient, override_chat_service) -> None:
+def test_chat_missing_api_key_returns_503(
+    auth_client: TestClient, auth_headers, override_chat_service
+) -> None:
     override_chat_service(make_service(api_key=None))
-    response = client.post("/api/chat", json={"message": "你好"})
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好"},
+        headers=auth_headers(auth_client),
+    )
 
     assert response.status_code == 503
 

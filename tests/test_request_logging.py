@@ -263,20 +263,33 @@ def test_real_app_health_response_has_request_id(client: TestClient) -> None:
 
 
 def test_real_app_validation_error_keeps_request_id_header(client: TestClient) -> None:
-    response = client.post("/api/chat", json={})
+    response = client.post("/api/auth/register", json={})
 
     assert response.status_code == 422
     assert response.headers["X-Request-ID"]
 
 
 def test_real_app_unhandled_exception_returns_json_500_with_request_id(
-    override_chat_service, fake_chat_service
+    db_session_override, override_chat_service, fake_chat_service
 ) -> None:
     fake_chat_service.error = ValueError("boom")
     override_chat_service(fake_chat_service)
 
     with TestClient(app, raise_server_exceptions=False) as test_client:
-        response = test_client.post("/api/chat", json={"message": "你好"})
+        test_client.post(
+            "/api/auth/register",
+            json={"email": "chat@example.com", "password": "password123"},
+        )
+        login = test_client.post(
+            "/api/auth/login",
+            json={"email": "chat@example.com", "password": "password123"},
+        )
+        token = login.json()["access_token"]
+        response = test_client.post(
+            "/api/chat",
+            json={"message": "你好"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
     assert response.status_code == 500
     assert response.headers["X-Request-ID"]
@@ -287,12 +300,19 @@ def test_real_app_unhandled_exception_returns_json_500_with_request_id(
 
 
 def test_real_app_handled_exception_returns_json_with_request_id(
-    client: TestClient, override_chat_service, fake_chat_service
+    auth_client: TestClient,
+    auth_headers,
+    override_chat_service,
+    fake_chat_service,
 ) -> None:
     fake_chat_service.error = DeepSeekError("upstream failure")
     override_chat_service(fake_chat_service)
 
-    response = client.post("/api/chat", json={"message": "你好"})
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好"},
+        headers=auth_headers(auth_client),
+    )
 
     assert response.status_code == 502
     assert response.headers["X-Request-ID"]

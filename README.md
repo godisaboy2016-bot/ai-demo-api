@@ -47,11 +47,17 @@ uvicorn app.main:app --reload
 
 ## DeepSeek Chat API
 
-向 DeepSeek 发送用户消息并返回 AI 回复：
+向 DeepSeek 发送用户消息并返回 AI 回复。该接口需要 Bearer token 认证，token 通过 `POST /api/auth/login` 获取：
 
 ```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "your@email.com", "password": "your-password"}' \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
 curl -X POST http://127.0.0.1:8000/api/chat \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"message": "你好"}'
 ```
 
@@ -63,7 +69,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 }
 ```
 
-请求体可选的 `model` 字段用于覆盖默认模型。使用前需配置 `DEEPSEEK_API_KEY`；未配置时接口返回 `503`，DeepSeek 上游错误返回 `502`，请求超时返回 `504`，参数校验失败返回 `422`。
+请求体可选的 `model` 字段用于覆盖默认模型。使用前需配置 `DEEPSEEK_API_KEY`；未认证请求返回 `401`，未配置 API Key 时返回 `503`，DeepSeek 上游错误返回 `502`，请求超时返回 `504`，参数校验失败返回 `422`。
 
 ## 运行测试
 
