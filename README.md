@@ -6,28 +6,53 @@
 
 - Python 3.12 + FastAPI
 - uvicorn 作为 ASGI 服务器
+- JWT 用户认证：`/api/auth/register`、`/api/auth/login`、`/api/auth/me`
+- `POST /api/chat` DeepSeek 聊天接口（Bearer token 认证，支持用户消息输入，返回 AI 回复）
 - `/health` 健康检查接口（供负载均衡器 / 容器编排使用）
-- `POST /api/chat` DeepSeek 聊天接口（支持用户消息输入，返回 AI 回复）
 - 基于 `pydantic-settings` 的配置管理（环境变量 + `.env`）
-- pytest 单元测试
+- 基于 Alembic 的数据库迁移（`docker compose run --rm migrate`）
+- 统一的 API 错误契约（`{error, message, request_id}` + `X-Request-ID`）
+- pytest 单元测试 + `docker compose config` 校验脚本
 - 多阶段 Docker 构建，以非 root 用户运行，内置 HEALTHCHECK
 
 ## 项目结构
 
 ```text
 .
-├── Dockerfile              # 多阶段构建镜像
-├── docker-compose.yml      # 一键部署
-├── pyproject.toml          # 依赖与构建配置
+├── Dockerfile                # 多阶段构建镜像
+├── docker-compose.yml        # 一键部署（db / migrate / api）
+├── pyproject.toml            # 依赖与构建配置
+├── scripts/
+│   └── check_compose.sh      # docker compose config 校验脚本
 ├── src/app/
-│   ├── main.py             # FastAPI 应用入口
-│   ├── core/config.py      # 配置管理
-│   ├── schemas/chat.py     # 聊天请求/响应模型
-│   ├── services/deepseek.py# DeepSeek API 服务
-│   └── api/routes/
-│       ├── health.py       # 健康检查路由
-│       └── chat.py         # 聊天路由
-└── tests/                  # pytest 测试
+│   ├── main.py               # FastAPI 应用入口（路由与异常处理器注册）
+│   ├── api/
+│   │   ├── dependencies.py   # get_current_user 认证依赖
+│   │   └── routes/
+│   │       ├── auth.py       # 注册 / 登录 / 当前用户
+│   │       ├── chat.py       # 聊天路由
+│   │       └── health.py     # 健康检查
+│   ├── core/
+│   │   ├── config.py         # 配置管理（pydantic-settings + JWT 校验）
+│   │   ├── security.py       # JWT 签发/校验、bcrypt 密码哈希
+│   │   ├── exceptions.py     # 业务异常（AuthError / ConflictError / DeepSeekError）
+│   │   └── exception_handlers.py  # 统一错误响应（业务异常 / 422 / 404 / 405 / 500）
+│   ├── db/
+│   │   ├── alembic.ini       # Alembic 配置
+│   │   ├── base.py           # SQLAlchemy Declarative Base
+│   │   ├── session.py        # async engine / session
+│   │   └── migrations/       # Alembic 迁移脚本（versions/ 下为版本迁移）
+│   ├── middleware/
+│   │   └── request_logging.py  # 请求日志与 X-Request-ID
+│   ├── models/
+│   │   └── user.py           # User 模型
+│   ├── schemas/
+│   │   ├── auth.py           # 注册 / 登录 / 用户响应模型
+│   │   └── chat.py           # 聊天请求 / 响应模型
+│   └── services/
+│       ├── auth_service.py   # 注册 / 认证业务逻辑
+│       └── deepseek.py       # DeepSeek API 客户端
+└── tests/                    # pytest 测试（认证 / 聊天 / 迁移 / 错误契约 / 日志等）
 ```
 
 ## 快速开始（本地开发）
@@ -38,6 +63,10 @@
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
+
+# 创建本地配置（.env 会被 .gitignore 忽略）
+cp .env.example .env
+# 编辑 .env：设置 JWT_SECRET_KEY（如 openssl rand -hex 32）与 DEEPSEEK_API_KEY
 
 # 启动数据库（PostgreSQL，仅暴露到本机 127.0.0.1:5432）
 docker compose up -d db
@@ -54,7 +83,44 @@ uvicorn app.main:app --reload
 
 访问 `http://127.0.0.1:8000/health` 查看健康状态，`http://127.0.0.1:8000/docs` 查看交互式 API 文档。
 
-注意：注册、登录等接口依赖 `users` 表，启动前必须先执行数据库迁移；`JWT_SECRET_KEY` 需在 `.env` 中配置（见下文“配置”）。
+注意：注册、登录等接口依赖 `users` 表，启动前必须先执行数据库迁移；本地启动要求 `JWT_SECRET_KEY` 已配置（缺失时应用拒绝启动）。
+
+## Auth API
+
+用户认证基于 JWT Bearer token，密码使用 bcrypt 哈希存储。
+
+### 注册
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email": "your@email.com", "password": "your-password"}'
+```
+
+- 成功：`201`，返回 `UserResponse`（`id`、`email`、`is_active`、`created_at`、`updated_at`）
+- 邮箱已存在：`409`，`{"error": "user_already_exists", ...}`
+- 密码需 8-72 字符且不超过 72 UTF-8 字节，否则 `422`，`{"error": "validation_error", ...}`
+
+### 登录
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "your@email.com", "password": "your-password"}'
+```
+
+- 成功：`200`，返回 `{"access_token": "<jwt>", "token_type": "bearer"}`（默认有效期 30 分钟）
+- 邮箱或密码错误：`401`，`{"error": "invalid_credentials", ...}`
+
+### 当前用户
+
+```bash
+curl http://127.0.0.1:8000/api/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+- 成功：`200`，返回 `UserResponse`
+- 缺失 / 无效 / 过期 token、token 类型非 access、用户不存在或已停用：`401`，`{"error": "invalid_token", ...}`
 
 ## DeepSeek Chat API
 
@@ -80,12 +146,34 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 }
 ```
 
-请求体可选的 `model` 字段用于覆盖默认模型。使用前需配置 `DEEPSEEK_API_KEY`；未认证请求返回 `401`，未配置 API Key 时返回 `503`，DeepSeek 上游错误返回 `502`，请求超时返回 `504`，参数校验失败返回 `422`。
+请求体可选的 `model` 字段用于覆盖默认模型。使用前需配置 `DEEPSEEK_API_KEY`。
+
+状态码说明：
+
+| 状态码 | 场景 | `error` |
+| --- | --- | --- |
+| `200` | 成功返回 AI 回复 | - |
+| `401` | 未认证 / token 无效 | `invalid_token` |
+| `422` | 请求体校验失败（如 `message` 缺失） | `validation_error` |
+| `502` | DeepSeek 上游错误 | `deepseek_error` |
+| `503` | 未配置 `DEEPSEEK_API_KEY` | `deepseek_error` |
+| `504` | 请求超时 | `deepseek_error` |
+
+所有错误响应统一为：
+
+```json
+{
+  "error": "错误码",
+  "message": "错误信息",
+  "request_id": "请求 ID（与 X-Request-ID header 一致）"
+}
+```
 
 ## 运行测试
 
 ```bash
 pytest
+./scripts/check_compose.sh
 ```
 
 ## 数据库迁移
@@ -132,6 +220,8 @@ docker compose up -d --build
 docker compose run --rm migrate
 ```
 
+`docker compose up` 会一并启动 `migrate` 服务（幂等，已应用过的迁移不会重复执行）；`docker compose run --rm migrate` 可用于手动重跑。
+
 或仅构建镜像：
 
 ```bash
@@ -145,18 +235,21 @@ docker run -p 8000:8000 ai-demo-api
 
 ## 配置
 
-所有配置项通过 `APP_` 前缀的环境变量注入（详见 `src/app/core/config.py`）：
+所有配置项通过环境变量注入（详见 `src/app/core/config.py`）。通用前缀为 `APP_`；部分变量支持无前缀别名（如 `DATABASE_URL` / `APP_DATABASE_URL`、`JWT_SECRET_KEY` / `APP_JWT_SECRET_KEY`）：
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `APP_APP_NAME` | `ai-demo-api` | 服务名称 |
 | `APP_APP_VERSION` | `0.1.0` | 服务版本 |
-| `APP_ENVIRONMENT` | `development` | 运行环境 |
+| `APP_ENVIRONMENT` | `development` | 运行环境（生产环境强制 `JWT_SECRET_KEY` 至少 32 字符） |
 | `APP_LOG_LEVEL` | `INFO` | 日志级别 |
-| `DEEPSEEK_API_KEY` | 无 | DeepSeek API Key（必填，缺失时聊天接口返回 503） |
+| `DATABASE_URL` | `postgresql+asyncpg://ai_demo:ai_demo@db:5432/ai_demo` | 数据库连接串 |
+| `DEEPSEEK_API_KEY` | 无 | DeepSeek API Key（缺失时聊天接口返回 503） |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 基础地址 |
 | `DEEPSEEK_MODEL` | `deepseek-chat` | 默认模型名 |
 | `DEEPSEEK_TIMEOUT_SECONDS` | `60.0` | DeepSeek 请求超时（秒） |
 | `JWT_SECRET_KEY` | 无 | JWT 签名密钥（必填；生产环境至少 32 字符，缺失或过短时服务拒绝启动）。生成示例：`openssl rand -hex 32` |
+| `JWT_ALGORITHM` | `HS256` | JWT 签名算法 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | access token 有效期（分钟） |
 
 可参考 `.env.example` 创建本地 `.env` 文件。
