@@ -35,11 +35,15 @@ def test_alembic_upgrade_head_creates_schema(tmp_path) -> None:
     engine = create_engine(f"sqlite:///{db_path}")
     try:
         inspector = inspect(engine)
-        assert set(inspector.get_table_names()) == {"alembic_version", "users"}
+        assert set(inspector.get_table_names()) == {
+            "alembic_version",
+            "chat_messages",
+            "users",
+        }
         with engine.connect() as conn:
             version = conn.execute(
                 text("SELECT version_num FROM alembic_version")
             ).scalar()
-        assert version == "0001"
+        assert version == "0002"
     finally:
         engine.dispose()

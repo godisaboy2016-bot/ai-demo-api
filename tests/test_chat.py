@@ -1,11 +1,14 @@
 import asyncio
+import uuid
 from typing import Self
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.core.config import Settings
+from app.models.chat_message import ChatMessage
 from app.services.deepseek import DeepSeekError, DeepSeekService
 
 
@@ -45,6 +48,17 @@ def make_service(api_key: str | None = "test-key") -> DeepSeekService:
     return DeepSeekService(settings)
 
 
+def _fetch_messages(factory) -> list[ChatMessage]:
+    async def fetch() -> list[ChatMessage]:
+        async with factory() as session:
+            result = await session.scalars(
+                select(ChatMessage).order_by(ChatMessage.created_at, ChatMessage.id)
+            )
+            return list(result.all())
+
+    return asyncio.run(fetch())
+
+
 def test_settings_read_deepseek_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-env-test")
     monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-reasoner")
@@ -69,7 +83,64 @@ def test_chat_returns_ai_reply(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "AI 回复"}
+    data = response.json()
+    assert data["reply"] == "AI 回复"
+    assert isinstance(uuid.UUID(data["conversation_id"]), uuid.UUID)
+
+
+def test_chat_persists_user_and_assistant_messages(
+    auth_client: TestClient,
+    auth_headers,
+    db_session_override,
+    override_chat_service,
+    fake_chat_service,
+) -> None:
+    override_chat_service(fake_chat_service)
+
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好", "model": "deepseek-chat"},
+        headers=auth_headers(auth_client),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["reply"] == "AI 回复"
+    response_conversation_id = uuid.UUID(data["conversation_id"])
+
+    messages = _fetch_messages(db_session_override)
+
+    assert len(messages) == 2
+    user_message = next(m for m in messages if m.role == "user")
+    assistant_message = next(m for m in messages if m.role == "assistant")
+    assert user_message.content == "你好"
+    assert assistant_message.content == "AI 回复"
+    assert user_message.conversation_id == assistant_message.conversation_id
+    assert user_message.conversation_id == response_conversation_id
+    assert user_message.user_id == assistant_message.user_id
+    assert assistant_message.model == "deepseek-chat"
+
+
+def test_chat_persists_default_model_when_not_specified(
+    auth_client: TestClient,
+    auth_headers,
+    db_session_override,
+    override_chat_service,
+    fake_chat_service,
+) -> None:
+    override_chat_service(fake_chat_service)
+
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好"},
+        headers=auth_headers(auth_client),
+    )
+
+    assert response.status_code == 200
+
+    messages = _fetch_messages(db_session_override)
+    assistant_message = next(m for m in messages if m.role == "assistant")
+    assert assistant_message.model == "deepseek-chat"
 
 
 def test_chat_missing_message_returns_422(

@@ -142,11 +142,14 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 
 ```json
 {
-  "reply": "AI回复内容"
+  "reply": "AI回复内容",
+  "conversation_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
 }
 ```
 
-请求体可选的 `model` 字段用于覆盖默认模型。使用前需配置 `DEEPSEEK_API_KEY`。
+请求体可选的 `model` 字段用于覆盖默认模型，未指定时使用 `DEEPSEEK_MODEL` 默认模型。
+响应中的 `conversation_id` 标识本轮用户消息与 AI 回复所属的会话。
+使用前需配置 `DEEPSEEK_API_KEY`。
 
 状态码说明：
 

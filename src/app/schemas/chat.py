@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 
@@ -35,12 +37,17 @@ class ChatResponse(BaseModel):
         ...,
         description="AI generated response",
     )
+    conversation_id: UUID = Field(
+        ...,
+        description="Conversation id shared by the user message and AI reply",
+    )
 
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
-                    "reply": "FastAPI is a modern Python web framework..."
+                    "reply": "FastAPI is a modern Python web framework...",
+                    "conversation_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
                 }
             ]
         }

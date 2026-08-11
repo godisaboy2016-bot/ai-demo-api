@@ -13,6 +13,11 @@ class DeepSeekService:
         self._model = settings.deepseek_model
         self._timeout = settings.deepseek_timeout_seconds
 
+    @property
+    def default_model(self) -> str:
+        """Default model used when no override is provided."""
+        return self._model
+
     async def chat(self, message: str, model: str | None = None) -> str:
         """Send a user message and return the AI reply."""
         if not self._api_key:

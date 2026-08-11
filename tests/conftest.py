@@ -20,9 +20,15 @@ from app.services.deepseek import get_deepseek_service
 class FakeDeepSeekService:
     """In-memory stand-in for DeepSeekService used in API tests."""
 
-    def __init__(self, reply: str = "AI 回复", error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        reply: str = "AI 回复",
+        error: Exception | None = None,
+        default_model: str = "deepseek-chat",
+    ) -> None:
         self.reply = reply
         self.error = error
+        self.default_model = default_model
 
     async def chat(self, message: str, model: str | None = None) -> str:
         if self.error is not None:

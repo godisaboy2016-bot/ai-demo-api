@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import jwt
 from fastapi.testclient import TestClient
@@ -76,4 +76,6 @@ def test_chat_with_valid_token_returns_200(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "AI 回复"}
+    data = response.json()
+    assert data["reply"] == "AI 回复"
+    assert isinstance(UUID(data["conversation_id"]), UUID)
