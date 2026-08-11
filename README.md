@@ -136,6 +136,12 @@ curl -X POST http://127.0.0.1:8000/api/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"message": "你好"}'
+
+# 继续上一轮会话（携带 conversation_id）
+curl -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"message": "请继续解释", "conversation_id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301"}'
 ```
 
 响应示例：
@@ -148,7 +154,11 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 ```
 
 请求体可选的 `model` 字段用于覆盖默认模型，未指定时使用 `DEEPSEEK_MODEL` 默认模型。
+请求体可选的 `conversation_id` 用于继续已有会话：携带时会加载该会话最近的历史消息
+作为多轮上下文（受 `DEEPSEEK_HISTORY_MAX_MESSAGES` 条数与 `DEEPSEEK_HISTORY_MAX_CHARS`
+字符数上限约束，超出部分按最旧优先丢弃）；不携带时自动创建新会话。
 响应中的 `conversation_id` 标识本轮用户消息与 AI 回复所属的会话。
+`conversation_id` 不存在或不属于当前用户时返回 `404 not_found`。
 使用前需配置 `DEEPSEEK_API_KEY`。
 
 状态码说明：
@@ -158,6 +168,7 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 | `200` | 成功返回 AI 回复 | - |
 | `401` | 未认证 / token 无效 | `invalid_token` |
 | `422` | 请求体校验失败（如 `message` 缺失） | `validation_error` |
+| `404` | `conversation_id` 不存在或不属于当前用户 | `not_found` |
 | `502` | DeepSeek 上游错误 | `deepseek_error` |
 | `503` | 未配置 `DEEPSEEK_API_KEY` | `deepseek_error` |
 | `504` | 请求超时 | `deepseek_error` |
@@ -251,6 +262,8 @@ docker run -p 8000:8000 ai-demo-api
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 基础地址 |
 | `DEEPSEEK_MODEL` | `deepseek-chat` | 默认模型名 |
 | `DEEPSEEK_TIMEOUT_SECONDS` | `60.0` | DeepSeek 请求超时（秒） |
+| `DEEPSEEK_HISTORY_MAX_MESSAGES` | `20` | 多轮上下文最多加载的历史消息条数 |
+| `DEEPSEEK_HISTORY_MAX_CHARS` | `8000` | 多轮上下文历史消息总字符数上限 |
 | `JWT_SECRET_KEY` | 无 | JWT 签名密钥（必填；生产环境至少 32 字符，缺失或过短时服务拒绝启动）。生成示例：`openssl rand -hex 32` |
 | `JWT_ALGORITHM` | `HS256` | JWT 签名算法 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `30` | access token 有效期（分钟） |

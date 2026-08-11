@@ -29,10 +29,22 @@ class FakeDeepSeekService:
         self.reply = reply
         self.error = error
         self.default_model = default_model
+        self.last_messages: list[dict[str, str]] = []
 
     async def chat(self, message: str, model: str | None = None) -> str:
+        return await self.chat_messages(
+            messages=[{"role": "user", "content": message}],
+            model=model,
+        )
+
+    async def chat_messages(
+        self,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+    ) -> str:
         if self.error is not None:
             raise self.error
+        self.last_messages = messages
         return self.reply
 
 

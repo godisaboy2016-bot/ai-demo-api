@@ -65,3 +65,20 @@ class ConflictError(AppException):
             status_code=409,
             error_code=error_code,
         )
+
+
+class NotFoundError(AppException):
+    """
+    Raised when a requested resource does not exist or is not accessible.
+    """
+
+    def __init__(
+        self,
+        message: str = "Resource not found.",
+        error_code: str = "not_found",
+    ) -> None:
+        super().__init__(
+            message=message,
+            status_code=404,
+            error_code=error_code,
+        )

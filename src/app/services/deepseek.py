@@ -20,12 +20,25 @@ class DeepSeekService:
 
     async def chat(self, message: str, model: str | None = None) -> str:
         """Send a user message and return the AI reply."""
+
+        return await self.chat_messages(
+            messages=[{"role": "user", "content": message}],
+            model=model,
+        )
+
+    async def chat_messages(
+        self,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+    ) -> str:
+        """Send a list of chat messages and return the AI reply."""
+
         if not self._api_key:
             raise DeepSeekError("DeepSeek API key is not configured.", status_code=503)
 
         payload = {
             "model": model or self._model,
-            "messages": [{"role": "user", "content": message}],
+            "messages": messages,
             "stream": False,
         }
         headers = {"Authorization": f"Bearer {self._api_key}"}

@@ -38,6 +38,20 @@ class Settings(BaseSettings):
             "DEEPSEEK_TIMEOUT_SECONDS", "APP_DEEPSEEK_TIMEOUT_SECONDS"
         ),
     )
+    deepseek_history_max_messages: int = Field(
+        default=20,
+        ge=1,
+        validation_alias=AliasChoices(
+            "DEEPSEEK_HISTORY_MAX_MESSAGES", "APP_DEEPSEEK_HISTORY_MAX_MESSAGES"
+        ),
+    )
+    deepseek_history_max_chars: int = Field(
+        default=8000,
+        ge=1,
+        validation_alias=AliasChoices(
+            "DEEPSEEK_HISTORY_MAX_CHARS", "APP_DEEPSEEK_HISTORY_MAX_CHARS"
+        ),
+    )
     database_url: str = Field(
         default="postgresql+asyncpg://ai_demo:ai_demo@db:5432/ai_demo",
         validation_alias=AliasChoices("DATABASE_URL", "APP_DATABASE_URL"),

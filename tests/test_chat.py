@@ -274,3 +274,101 @@ def test_service_raises_on_malformed_response(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(DeepSeekError):
         asyncio.run(make_service().chat("你好"))
+
+
+def test_chat_multi_turn_passes_context(
+    auth_client: TestClient,
+    auth_headers,
+    db_session_override,
+    override_chat_service,
+    fake_chat_service,
+) -> None:
+    override_chat_service(fake_chat_service)
+    headers = auth_headers(auth_client)
+
+    first = auth_client.post(
+        "/api/chat",
+        json={"message": "第一问"},
+        headers=headers,
+    )
+    assert first.status_code == 200
+    conversation_id = first.json()["conversation_id"]
+
+    second = auth_client.post(
+        "/api/chat",
+        json={"message": "第二问", "conversation_id": conversation_id},
+        headers=headers,
+    )
+    assert second.status_code == 200
+    assert second.json()["conversation_id"] == conversation_id
+
+    assert fake_chat_service.last_messages == [
+        {"role": "user", "content": "第一问"},
+        {"role": "assistant", "content": "AI 回复"},
+        {"role": "user", "content": "第二问"},
+    ]
+
+    messages = _fetch_messages(db_session_override)
+    assert len(messages) == 4
+    assert {m.conversation_id for m in messages} == {uuid.UUID(conversation_id)}
+
+
+def test_chat_cross_user_conversation_returns_404(
+    auth_client: TestClient,
+    auth_headers,
+    db_session_override,
+    override_chat_service,
+    fake_chat_service,
+) -> None:
+    override_chat_service(fake_chat_service)
+
+    alice_headers = auth_headers(auth_client)
+    first = auth_client.post(
+        "/api/chat",
+        json={"message": "你好"},
+        headers=alice_headers,
+    )
+    assert first.status_code == 200
+    conversation_id = first.json()["conversation_id"]
+
+    auth_client.post(
+        "/api/auth/register",
+        json={"email": "bob@example.com", "password": "password123"},
+    )
+    login = auth_client.post(
+        "/api/auth/login",
+        json={"email": "bob@example.com", "password": "password123"},
+    )
+    bob_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "入侵", "conversation_id": conversation_id},
+        headers=bob_headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+
+    messages = _fetch_messages(db_session_override)
+    assert len(messages) == 2
+    assert all(m.conversation_id == uuid.UUID(conversation_id) for m in messages)
+
+
+def test_chat_invalid_conversation_id_returns_422(
+    auth_client: TestClient,
+    auth_headers,
+    override_chat_service,
+    fake_chat_service,
+) -> None:
+    override_chat_service(fake_chat_service)
+    headers = auth_headers(auth_client)
+
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好", "conversation_id": "not-a-uuid"},
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "validation_error"
