@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ChatRequest(BaseModel):
@@ -22,6 +22,16 @@ class ChatRequest(BaseModel):
         default=None,
         description="Optional DeepSeek model override",
     )
+
+    @field_validator("model")
+    @classmethod
+    def _normalize_model(cls, value: str | None) -> str | None:
+        """Treat blank model strings as unspecified so they never reach DeepSeek."""
+
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
     model_config = {
         "json_schema_extra": {

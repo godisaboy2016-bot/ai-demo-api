@@ -30,6 +30,7 @@ class FakeDeepSeekService:
         self.error = error
         self.default_model = default_model
         self.last_messages: list[dict[str, str]] = []
+        self.last_model: str | None = None
 
     async def chat(self, message: str, model: str | None = None) -> str:
         return await self.chat_messages(
@@ -45,6 +46,7 @@ class FakeDeepSeekService:
         if self.error is not None:
             raise self.error
         self.last_messages = messages
+        self.last_model = model
         return self.reply
 
 

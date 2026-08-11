@@ -156,7 +156,8 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 请求体可选的 `model` 字段用于覆盖默认模型，未指定时使用 `DEEPSEEK_MODEL` 默认模型。
 请求体可选的 `conversation_id` 用于继续已有会话：携带时会加载该会话最近的历史消息
 作为多轮上下文（受 `DEEPSEEK_HISTORY_MAX_MESSAGES` 条数与 `DEEPSEEK_HISTORY_MAX_CHARS`
-字符数上限约束，超出部分按最旧优先丢弃）；不携带时自动创建新会话。
+字符数上限约束，超出部分按完整 user/assistant 对从最旧优先丢弃，保证发给 DeepSeek 的
+messages 首条为 user 且角色严格交替）；不携带时自动创建新会话。
 响应中的 `conversation_id` 标识本轮用户消息与 AI 回复所属的会话。
 `conversation_id` 不存在或不属于当前用户时返回 `404 not_found`。
 使用前需配置 `DEEPSEEK_API_KEY`。
@@ -182,6 +183,69 @@ curl -X POST http://127.0.0.1:8000/api/chat \
   "request_id": "请求 ID（与 X-Request-ID header 一致）"
 }
 ```
+
+## Chat History API
+
+返回当前登录用户的历史聊天消息，按时间倒序（最新在前），支持游标分页。需要 Bearer token 认证，token 获取方式与 `POST /api/chat` 相同。
+
+### 获取历史
+
+```bash
+curl "http://127.0.0.1:8000/api/chat/history?limit=20" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+参数说明：
+
+| 参数 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `limit` | int | `20` | 每页返回的消息数，取值范围 1-100 |
+| `cursor` | string | 无 | 上一页响应中的 `next_cursor`，用于获取下一页 |
+| `conversation_id` | UUID | 无 | 可选，只返回指定会话的消息 |
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      "conversation_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "role": "user",
+      "content": "你好",
+      "model": null,
+      "created_at": "2026-08-11T12:00:00+00:00"
+    },
+    {
+      "id": "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+      "conversation_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "role": "assistant",
+      "content": "你好！有什么可以帮你的吗？",
+      "model": "deepseek-chat",
+      "created_at": "2026-08-11T12:00:01+00:00"
+    }
+  ],
+  "next_cursor": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wOC0xMVQxMjowMDowMSswMDowMCIsImlkIjoiM2YyNTA0ZTAtNGY4OS0xMWQzLTlhMGMtMDMwNWU4MmMzMzAyIn0="
+}
+```
+
+`items` 中每条消息包含 `id`、`conversation_id`、`role`（`user` 或 `assistant`）、`content`、`model`（assistant 消息为实际调用模型，user 消息为 `null`）与 `created_at`。
+
+分页：将上一页响应中的 `next_cursor` 作为下一次请求的 `cursor` 参数传入，直到 `next_cursor` 为 `null` 表示没有更多消息：
+
+```bash
+curl "http://127.0.0.1:8000/api/chat/history?limit=20&cursor=$NEXT_CURSOR" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+按会话过滤：传入 `conversation_id` 只返回该会话的消息；会话不存在时返回空列表（HTTP 200），不会返回 404。
+
+错误说明：
+
+| 状态码 | 场景 | `error` |
+| --- | --- | --- |
+| `401` | 未认证 / token 无效 | `invalid_token` |
+| `422` | `limit` 超出 1-100、`cursor` 非法、`conversation_id` 格式错误 | `validation_error` |
 
 ## 运行测试
 
@@ -231,10 +295,11 @@ curl -s -X POST http://127.0.0.1:8000/api/auth/register \
 export JWT_SECRET_KEY="$(openssl rand -hex 32)"
 
 docker compose up -d --build
-docker compose run --rm migrate
 ```
 
-`docker compose up` 会一并启动 `migrate` 服务（幂等，已应用过的迁移不会重复执行）；`docker compose run --rm migrate` 可用于手动重跑。
+`docker compose up` 会先启动 `db` 与 `migrate` 服务（迁移幂等，已应用过的不会重复执行），
+`api` 会在 `migrate` 成功完成后才启动，因此 `docker compose up -d` 是唯一可靠的启动方式。
+如需手动重跑迁移（例如重置后初始化），仍可使用 `docker compose run --rm migrate`。
 
 或仅构建镜像：
 

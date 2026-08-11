@@ -28,18 +28,46 @@ def _build_context(
     """
     Build the DeepSeek messages payload from conversation history.
 
-    Keeps the most recent history messages that fit within the character
-    budget, preserving chronological order, then appends the current message.
+    The payload always starts with a user message and alternates roles, since
+    DeepSeek rejects conversations that open with an assistant reply or contain
+    consecutive same-role messages. History is therefore truncated on complete
+    (user, assistant) pairs, keeping the most recent pairs that fit within the
+    character budget, then the current user message is appended.
     """
 
     budget = max_chars - len(message)
-    context: list[dict[str, str]] = []
-    for chat_message in reversed(history):
-        if len(chat_message.content) > budget:
+    if budget <= 0:
+        return [{"role": "user", "content": message}]
+
+    messages = list(history)
+    # A truncated slice of an alternating conversation can start with an orphan
+    # assistant reply or end with an unanswered user message; drop both so only
+    # complete (user, assistant) pairs remain.
+    if messages and messages[0].role == "assistant":
+        messages = messages[1:]
+    if messages and messages[-1].role == "user":
+        messages = messages[:-1]
+
+    kept: list[ChatMessage] = []
+    index = len(messages) - 1
+    while index >= 1:
+        user_message = messages[index - 1]
+        assistant_message = messages[index]
+        if user_message.role != "user" or assistant_message.role != "assistant":
             break
-        context.append({"role": chat_message.role, "content": chat_message.content})
-        budget -= len(chat_message.content)
-    context.reverse()
+        pair_cost = len(user_message.content) + len(assistant_message.content)
+        if pair_cost > budget:
+            index -= 2
+            continue
+        kept.extend((assistant_message, user_message))
+        budget -= pair_cost
+        index -= 2
+
+    kept.reverse()
+    context = [
+        {"role": chat_message.role, "content": chat_message.content}
+        for chat_message in kept
+    ]
     context.append({"role": "user", "content": message})
     return context
 

@@ -355,6 +355,62 @@ def test_chat_cross_user_conversation_returns_404(
     assert all(m.conversation_id == uuid.UUID(conversation_id) for m in messages)
 
 
+def test_chat_nonexistent_conversation_returns_404(
+    auth_client: TestClient,
+    auth_headers,
+    db_session_override,
+    override_chat_service,
+    fake_chat_service,
+) -> None:
+    override_chat_service(fake_chat_service)
+
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好", "conversation_id": str(uuid.uuid4())},
+        headers=auth_headers(auth_client),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"] == "not_found"
+    assert _fetch_messages(db_session_override) == []
+
+
+def test_chat_message_over_max_length_returns_422(
+    auth_client: TestClient, auth_headers
+) -> None:
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "a" * 4097},
+        headers=auth_headers(auth_client),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "validation_error"
+
+
+def test_chat_blank_model_uses_default_model(
+    auth_client: TestClient,
+    auth_headers,
+    db_session_override,
+    override_chat_service,
+    fake_chat_service,
+) -> None:
+    override_chat_service(fake_chat_service)
+
+    response = auth_client.post(
+        "/api/chat",
+        json={"message": "你好", "model": "   "},
+        headers=auth_headers(auth_client),
+    )
+
+    assert response.status_code == 200
+    assert fake_chat_service.last_model is None
+
+    messages = _fetch_messages(db_session_override)
+    assistant_message = next(m for m in messages if m.role == "assistant")
+    assert assistant_message.model == "deepseek-chat"
+
+
 def test_chat_invalid_conversation_id_returns_422(
     auth_client: TestClient,
     auth_headers,

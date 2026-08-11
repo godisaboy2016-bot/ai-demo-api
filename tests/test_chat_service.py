@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from itertools import pairwise
 
 import pytest
 from sqlalchemy import select
@@ -80,6 +81,17 @@ async def _messages(session) -> list[ChatMessage]:
         select(ChatMessage).order_by(ChatMessage.created_at, ChatMessage.id)
     )
     return list(result.all())
+
+
+def _assert_valid_payload(payload: list[dict[str, str]]) -> None:
+    """Assert a payload satisfies the DeepSeek message contract."""
+
+    assert payload, "payload must not be empty"
+    assert payload[0]["role"] == "user"
+    assert payload[-1]["role"] == "user"
+    for previous, current in pairwise(payload):
+        assert current["role"] in {"user", "assistant"}
+        assert current["role"] != previous["role"]
 
 
 async def test_user_message_is_persisted(db_session, user) -> None:
@@ -256,7 +268,6 @@ async def test_multi_turn_context_keeps_recent_messages(
         assert service.last_messages == [
             {"role": "user", "content": "m-2"},
             {"role": "assistant", "content": "m-3"},
-            {"role": "user", "content": "m-4"},
             {"role": "user", "content": "last"},
         ]
     finally:
@@ -293,12 +304,112 @@ async def test_multi_turn_context_truncated_by_chars(
             deepseek_service=service,
         )
 
+        assert service.last_messages == [{"role": "user", "content": "z"}]
+    finally:
+        get_settings.cache_clear()
+
+
+async def test_multi_turn_context_over_twenty_messages_keeps_valid_roles(
+    db_session, user
+) -> None:
+    conversation_id = uuid.uuid4()
+    base = datetime.now(UTC)
+    for i in range(21):
+        db_session.add(
+            ChatMessage(
+                user_id=user.id,
+                conversation_id=conversation_id,
+                role="user" if i % 2 == 0 else "assistant",
+                content=f"m-{i}",
+                created_at=base + timedelta(seconds=i),
+            )
+        )
+    await db_session.commit()
+
+    service = FakeDeepSeekService()
+    await chat_with_persistence(
+        session=db_session,
+        user=user,
+        message="last",
+        model=None,
+        conversation_id=conversation_id,
+        deepseek_service=service,
+    )
+
+    _assert_valid_payload(service.last_messages)
+    assert len(service.last_messages) == 19
+    assert service.last_messages[0] == {"role": "user", "content": "m-2"}
+    assert service.last_messages[-1] == {"role": "user", "content": "last"}
+
+
+async def test_multi_turn_context_keeps_fitting_pairs_when_newest_pair_too_large(
+    db_session, user, monkeypatch
+) -> None:
+    monkeypatch.setenv("DEEPSEEK_HISTORY_MAX_CHARS", "40")
+    get_settings.cache_clear()
+    try:
+        conversation_id = uuid.uuid4()
+        base = datetime.now(UTC)
+        pairs = (
+            ("user", "a" * 3, "assistant", "b" * 3),
+            ("user", "x" * 25, "assistant", "y" * 25),
+        )
+        for i, (user_role, user_content, assistant_role, assistant_content) in enumerate(
+            pairs
+        ):
+            db_session.add(
+                ChatMessage(
+                    user_id=user.id,
+                    conversation_id=conversation_id,
+                    role=user_role,
+                    content=user_content,
+                    created_at=base + timedelta(seconds=i * 2),
+                )
+            )
+            db_session.add(
+                ChatMessage(
+                    user_id=user.id,
+                    conversation_id=conversation_id,
+                    role=assistant_role,
+                    content=assistant_content,
+                    created_at=base + timedelta(seconds=i * 2 + 1),
+                )
+            )
+        await db_session.commit()
+
+        service = FakeDeepSeekService()
+        await chat_with_persistence(
+            session=db_session,
+            user=user,
+            message="z",
+            model=None,
+            conversation_id=conversation_id,
+            deepseek_service=service,
+        )
+
         assert service.last_messages == [
-            {"role": "assistant", "content": "y" * 25},
+            {"role": "user", "content": "a" * 3},
+            {"role": "assistant", "content": "b" * 3},
             {"role": "user", "content": "z"},
         ]
     finally:
         get_settings.cache_clear()
+
+
+async def test_multi_turn_consecutive_calls_keep_valid_payload(db_session, user) -> None:
+    service = FakeDeepSeekService()
+    conversation_id = None
+    for _ in range(3):
+        result = await chat_with_persistence(
+            session=db_session,
+            user=user,
+            message="question",
+            model=None,
+            conversation_id=conversation_id,
+            deepseek_service=service,
+        )
+        conversation_id = result.conversation_id
+        _assert_valid_payload(service.last_messages)
 
 
 async def test_multi_turn_failure_persists_user_message_only(db_session, user) -> None:
